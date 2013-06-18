@@ -1,0 +1,189 @@
+import sys
+import os
+import math
+from sklearn import metrics
+from sklearn import tree
+from sklearn import cross_validation
+import StringIO, pydot
+import pylab as pl
+import random
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+
+smallBlind = 50
+
+def processHand(h, player, type):
+  if "STATE" not in h:
+    return None
+
+  phs = h.split(":")
+
+  hNo = int(phs[1])
+  bets = phs[2].split("/")
+  cards = phs[3].split("/")
+  rez = phs[4].split("|")
+  lastOrder=phs[5].split("|")
+  firstOrder = reversed(lastOrder)
+
+  cCards = cards[1:]
+  if len(cCards) > 0:
+    cCards[0] = [cCards[0][:2],cCards[0][2:4],cCards[0][4:6]]
+  hCards = cards[0].split("|")
+  hCards = [[hCards[0][:2],hCards[0][2:4]],[hCards[1][:2],hCards[1][2:4]]]
+  curBet = [smallBlind, 2*smallBlind]
+  curPlayer = 0
+  nextPlayer = 1
+  nbets = {}
+  stages = ["pre-flop","flop","turn","river"]
+  s = 0
+  for bet in bets:
+    curB = []
+    i = 0
+    while i < (len(bet)):
+      if bet[i] == "f":
+        curB.append({"betType":"f","betAmm":0})
+
+      elif bet[i] == "c":
+        diff = curBet[nextPlayer] - curBet[curPlayer]
+        #print curPlayer, nextPlayer, diff
+        curB.append({"betType":"c","betAmm":diff})
+        curBet[curPlayer] += diff
+
+      elif bet[i] == "r":
+        nr = ""
+        while bet[i+1] in "0123456789":
+          i += 1
+          nr += bet[i]
+        nr = int(nr)
+
+        diff = nr - curBet[curPlayer] - (curBet[nextPlayer] - curBet[curPlayer])
+        curB.append({"betType":"r","betAmm":diff})
+        curBet[curPlayer] += diff + (curBet[nextPlayer] - curBet[curPlayer])
+      curPlayer = nextPlayer
+      nextPlayer = (nextPlayer+1)%2
+      i += 1
+    nbets[stages[s]] = curB
+    s += 1
+  bets = nbets
+  
+  pot = {}
+  curPot = 3*smallBlind
+  toCall = smallBlind
+  for s in range(len(bets)):
+    stage = stages[s]
+    pot[stage] = []
+    for ind in range(len(bets[stage])):
+      if bets[stage][ind]["betType"] == "c":
+        curPot += toCall
+        toCall = 0
+      if bets[stage][ind]["betType"] == "r":
+        curPot += toCall + bets[stage][ind]["betAmm"]
+        toCall = bets[stage][ind]["betAmm"]
+      pot[stage].append(curPot)
+
+  if type == 0:
+    if player == lastOrder[0]:
+      pos = 0
+      pot = pot["pre-flop"][-1]
+    else:
+      pos = 1
+      pot = pot["flop"][0]
+    raised = float(bets["flop"][pos]["betAmm"]) / pot
+    categ = h[-2]
+    if not categ in "01":
+      categ = h[-1]
+    return str(hNo)+","+str(pos)+","+str(pot)+","+str(raised)+","+categ
+  
+def getBasicFeatures(fs):
+  hands = []
+  for fl in fs:
+    player = fl.split('.')[0]
+    with open(fl, 'r') as f:
+      for line in f:
+        hands.append(fl + "," + processHand(line,player,0))
+  return hands
+  
+def getH2(prob):
+  if prob == 1 or prob == 0:
+    return 0
+  rp = 1.0 - prob
+  return -prob*math.log(prob,2) - rp*math.log(rp,2)
+  
+def testFeats(fns):
+  count = -1
+  size = (2,6)
+  fig = plt.figure(figsize=(size[1]*2.5,size[0]*2.5))
+  gs = gridspec.GridSpec(size[0], size[1])
+  ax_list = []
+  for fn in fns:
+    count += 1
+    feats = []
+    with open(fn,'r') as f:
+      lineNo = 0
+      for line in f:
+        lineNo += 1
+        #if lineNo == 100:
+        #  break
+        feats.append(map(float,line.strip().split(',')[2:]))
+
+    X = []
+    Y = []
+    for f in feats:
+      X.append(f[:-1])
+      if f[-1] == 1.0:
+        Y.append(1)
+      else:
+        Y.append(-1)
+
+    X_train, X_test, Y_train, Y_test = cross_validation.train_test_split(X, Y, test_size=0.2, random_state=0)
+    
+    clf = tree.DecisionTreeClassifier()
+    clf = clf.fit(X_train, Y_train)
+
+    probs = clf.predict_proba(X_test)
+   # Compute ROC curve and area the curve
+    fpr, tpr, thresholds = metrics.roc_curve(Y_test, probs[:, 1])
+    roc_auc = metrics.auc(fpr, tpr)
+    print "Area under the ROC curve : %f" % roc_auc
+    # Plot ROC curve
+    row = count/size[1]
+    col = count % size[1]
+    ax = fig.add_subplot(gs[row, col])
+    #pl.clf()
+    ax.plot(fpr, tpr, label='Area = %0.2f' % roc_auc)
+    ax.plot([0, 1], [0, 1], 'k--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.0])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title(fn[10:-6])
+    plt.legend(loc="lower right", fontsize=10)
+    plt.subplots_adjust(top=0.85)
+    ax_list.append(ax)
+    
+  fig.suptitle("ROC Curves", fontsize=30)
+  gs.tight_layout(fig, rect=[0, 0, 1, 0.93])
+  #fig.subplots_adjust(left=0.16, right=0.94, top=0.94, bottom=0.15)
+  plt.show()
+  """
+  dot_data = StringIO.StringIO() 
+  tree.export_graphviz(clf, out_file=dot_data) 
+  graph = pydot.graph_from_dot_data(dot_data.getvalue()) 
+  graph.write_pdf("tree.pdf") 
+  """
+        
+
+if __name__ == "__main__":
+  fdir = "processed/"
+  if sys.argv[1] == "0":
+    fs = [fdir + x for x in filter(lambda x: x[:10] == "azure_sky.", os.listdir(fdir))]
+    print len(fs), fs
+    fn = "azure_sky-basic"
+    hands = getBasicFeatures(fs)
+    with open(fn,'w') as f:
+      f.write('\n'.join(hands))
+  elif sys.argv[1] == "1":
+    files = [fdir + x + "-basic" for x in ["azure_sky","dcubot","hugh","hyperborean","little_rock","spewy_louie","neo_poker_lab","tartanian5","sartre","lucky7_12","uni_mb_poker", "all"]]
+    testFeats(files)
+  else:
+    print "Invalid argument"

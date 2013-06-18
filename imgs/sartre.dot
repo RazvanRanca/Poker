@@ -1,0 +1,15 @@
+digraph Tree {
+0 [label="X[1] <= 970.0000\nerror = 0.402311555891\nsamples = 3018\nvalue = [ 2176.   842.]", shape="box"] ;
+1 [label="X[1] <= 416.0000\nerror = 0.251836701566\nsamples = 2220\nvalue = [ 1892.   328.]", shape="box"] ;
+0 -> 1 ;
+2 [label="error = 0.4303\nsamples = 466\nvalue = [ 146.  320.]", shape="box"] ;
+1 -> 2 ;
+3 [label="error = 0.0091\nsamples = 1754\nvalue = [ 1746.     8.]", shape="box"] ;
+1 -> 3 ;
+4 [label="X[1] <= 2152.0000\nerror = 0.458464456882\nsamples = 798\nvalue = [ 284.  514.]", shape="box"] ;
+0 -> 4 ;
+5 [label="error = 0.4986\nsamples = 346\nvalue = [ 182.  164.]", shape="box"] ;
+4 -> 5 ;
+6 [label="error = 0.3495\nsamples = 452\nvalue = [ 102.  350.]", shape="box"] ;
+4 -> 6 ;
+}
